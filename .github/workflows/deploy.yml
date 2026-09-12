@@ -1,0 +1,121 @@
+name: Deploy Backend
+
+on:
+  # 推送 main 后自动部署，也允许手动运行
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      DEPLOY_ARCHIVE: backend-${{ github.run_id }}-${{ github.run_attempt }}.tar.gz
+
+    steps:
+      - name: 获取本次提交的代码
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: 配置 Java 21 和 Maven 缓存
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: 打包后端
+        run: |
+          set -euo pipefail
+
+          # 沿用首次部署方式，暂时跳过测试执行
+          mvn -B -DskipTests package
+
+          # 部署包中只放 JAR 和运行用的 Dockerfile
+          mkdir -p deploy-package
+          cp target/*.jar deploy-package/app.jar
+          cp deploy/Dockerfile deploy-package/Dockerfile
+
+          tar -czf "$DEPLOY_ARCHIVE" -C deploy-package .
+          ls -lh "$DEPLOY_ARCHIVE"
+
+      - name: 配置 SSH 登录凭据
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: 上传部署包
+        run: |
+          # 显示传输进度，便于观察是否仍在上传
+          rsync --partial --info=progress2 \
+            -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=3" \
+            "$DEPLOY_ARCHIVE" \
+            "$SSH_USER@$SSH_HOST:/home/ubuntu/projects/devhub/"
+
+      - name: 更新后端并检查接口
+        run: |
+          ssh \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=3 \
+            "$SSH_USER@$SSH_HOST" \
+            bash -s -- "$GITHUB_SHA" "$DEPLOY_ARCHIVE" <<'REMOTE'
+          set -euo pipefail
+          cd /home/ubuntu/projects/devhub
+
+          version="$1"
+          archive="$2"
+
+          # 与前端工作流共用锁，避免同时更新容器
+          exec 9>.deploy.lock
+          flock -w 300 9
+
+          # 每次部署保留独立目录
+          release="releases/${archive%.tar.gz}"
+          mkdir -p "$release"
+          tar -xzf "$archive" -C "$release"
+
+          # 使用打好的 JAR 构建镜像；服务器无需安装 Maven
+          docker build -t "devhub-backend:$version" "$release"
+          rm -f "$archive"
+
+          # 保留上一个镜像版本，供需要时恢复
+          if docker image inspect devhub-backend:latest >/dev/null 2>&1; then
+            docker tag devhub-backend:latest devhub-backend:previous
+          fi
+
+          docker tag "devhub-backend:$version" devhub-backend:latest
+          docker compose up -d --no-deps --no-build backend
+
+          # 后端容器的 IP 可能变化，重启 Nginx 重新解析地址
+          docker compose restart frontend
+
+          # 等待后端启动，并通过 Nginx 检查健康接口
+          curl --fail --silent --show-error \
+            --retry 20 --retry-delay 5 --retry-all-errors \
+            --max-time 10 \
+            http://127.0.0.1/api/health
+
+          echo "后端部署成功"
+          REMOTE

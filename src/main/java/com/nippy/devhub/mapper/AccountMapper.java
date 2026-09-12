@@ -1,6 +1,9 @@
 package com.nippy.devhub.mapper;
 
 import com.nippy.devhub.vo.AccountVO;
+import com.nippy.devhub.entity.Account;
+import org.apache.ibatis.annotations.Insert;
+import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Select;
 
@@ -17,4 +20,11 @@ public interface AccountMapper {
             ORDER BY id DESC
             """)
     List<AccountVO> selectAll();
+
+    @Insert("""
+            INSERT INTO accounts (system_name, environment, username, password, login_url, remark)
+            VALUES (#{systemName}, #{environment}, #{username}, #{password}, #{loginUrl}, #{remark})
+            """)
+    @Options(useGeneratedKeys = true, keyProperty = "id")
+    int insert(Account account);
 }
