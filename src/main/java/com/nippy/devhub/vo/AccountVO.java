@@ -14,6 +14,8 @@ public class AccountVO {
     private String environment;
     // 用户名
     private String username;
+    // 账号密码
+    private String password;
     // 登录URL
     private String loginUrl;
     // 备注

@@ -11,8 +11,8 @@ public interface AccountMapper {
 
     // 时间列通过别名配合驼峰映射，分别对应 createTime、updateTime。
     @Select("""
-            SELECT id, system_name, environment, username, login_url, remark,
-                   created_time , updated_time
+            SELECT id, system_name, environment, username, password, login_url, remark,
+                   created_time AS create_time, updated_time AS update_time
             FROM accounts
             ORDER BY id DESC
             """)

@@ -3,9 +3,10 @@ spring:
     name: devhub
 
   datasource:
-    url: jdbc:mysql://120.53.225.128:3306/devhub
-    username: root
-    password: LinCong@2025
+    # 启动时从环境变量读取数据库连接信息
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
 mybatis:
