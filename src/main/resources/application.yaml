@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: devhub
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/devhub?useUnicode=true&characterEncoding=utf8mb4&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: your_password
+    driver-class-name: com.mysql.cj.jdbc.Driver
