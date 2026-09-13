@@ -9,6 +9,15 @@ spring:
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
+server:
+  servlet:
+    session:
+      timeout: 7d
+      cookie:
+        http-only: true
+        same-site: strict
+        secure: ${SESSION_COOKIE_SECURE:false}
+
 mybatis:
   configuration:
     # 开启驼峰映射

@@ -2,6 +2,36 @@
 
 Java 21、Spring Boot、MyBatis、MySQL。启动前配置 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD`，默认端口为 8080。
 
+## 登录与贪吃蛇排行
+
+上线前由数据库管理员手动执行 [sql/20260913_auth_snake.sql](sql/20260913_auth_snake.sql)。
+脚本新增 `app_users`、`snake_games` 两张表，应用不自动建表，也不修改现有账号管理的数据和访问方式。
+未执行 DDL 时，新的注册、登录和排行接口不可用；原有账号接口保持原样。
+
+| 请求 | 用途 |
+| --- | --- |
+| `POST /api/auth/register` | `username`、`password`，注册并登录 |
+| `POST /api/auth/login` | 用户名密码登录 |
+| `GET /api/auth/me` | 当前用户 `{id, username}`，游客为 null |
+| `POST /api/auth/logout` | 使当前会话失效 |
+| `POST /api/snake/games` | 登录后提交 `difficulty`（easy/normal/hard），返回 `{id, seed}` |
+| `POST /api/snake/games/{id}/finish` | 登录后提交 `{moves: "RRDD..."}`，返回服务端复算的 `{score, outcome}` |
+| `GET /api/snake/leaderboard` | 公开的前 50 名 `entries`，以及当前用户的 `myBest` |
+
+以上写接口必须携带 `Content-Type: application/json` 和 `X-DevHub-Request: 1`。
+使用同源 HttpOnly、SameSite=Strict 会话 Cookie，不开放跨域访问。
+用户名为 3–24 位英文字母、数字或下划线，不区分大小写；密码 8–128 位，使用独立随机盐与 PBKDF2-HMAC-SHA256（600000 轮）存储。
+注册和登录按来源地址限制为每分钟 30 次。会话闲置 7 天过期，后端重启后需重新登录，数据库成绩继续保留。
+HTTPS 部署应设置 `SESSION_COOKIE_SECURE=true`；本地 HTTP 开发默认 false。
+
+棋盘为 20×20，初始蛇长 3，最多同时存在 8 颗果实，每颗 20 分，最高 7940 分。
+左右、上下边界互通，撞到自己失败，填满棋盘获胜；可主动结束并记分。
+服务端保存对局种子，按相同随机算法复算最多 50000 步操作和实际耗时，不接收客户端提供的分数。
+每个方向字符表示一个移动周期：U/D/L/R；每周期耗时为轻松 200ms、标准 140ms、挑战 90ms。
+同一对局只计分一次，重复提交返回既有成绩；仅对局所属用户可提交。每用户每分钟最多开始 20 局。
+复算用于防止直接篡改分数，不防止自动化代玩。排行榜按每位用户的最高正分排序，同分按用户 ID 升序排列，三个难度共用排行榜。
+未登录时可本地试玩，游客成绩不补录至账号。此版本与旧版本计分不同，游客最高分使用新的本地存储键。
+
 ## 账号接口
 
 | 操作 | 请求 | 成功响应中的 data |
