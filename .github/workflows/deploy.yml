@@ -22,7 +22,7 @@ jobs:
     env:
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_USER: ${{ secrets.SSH_USER }}
-      DEPLOY_ARCHIVE: backend-${{ github.run_id }}-${{ github.run_attempt }}.tar.gz
+      DEPLOY_RELEASE: backend-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
       - name: 获取本次提交的代码
@@ -49,8 +49,8 @@ jobs:
           cp target/*.jar deploy-package/app.jar
           cp deploy/Dockerfile deploy-package/Dockerfile
 
-          tar -czf "$DEPLOY_ARCHIVE" -C deploy-package .
-          ls -lh "$DEPLOY_ARCHIVE"
+          (cd deploy-package && sha256sum app.jar Dockerfile > SHA256SUMS)
+          ls -lh deploy-package/app.jar
 
       - name: 配置 SSH 登录凭据
         env:
@@ -63,15 +63,19 @@ jobs:
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
 
-      - name: 上传部署包
+      - name: 准备增量传输基准
+        timeout-minutes: 6
         run: |
-          # 显示传输进度，便于观察是否仍在上传
-          rsync --partial --info=progress2 \
-            -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=3" \
-            "$DEPLOY_ARCHIVE" \
-            "$SSH_USER@$SSH_HOST:/home/ubuntu/projects/devhub/"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+            "$SSH_USER@$SSH_HOST" bash -s -- "$DEPLOY_RELEASE" < deploy/prepare-upload.sh
+
+      - name: 增量上传部署文件
+        timeout-minutes: 17
+        run: bash deploy/upload.sh
 
       - name: 更新后端并检查接口
+        timeout-minutes: 10
         run: |
           ssh \
             -o BatchMode=yes \
@@ -80,25 +84,25 @@ jobs:
             -o ServerAliveInterval=30 \
             -o ServerAliveCountMax=3 \
             "$SSH_USER@$SSH_HOST" \
-            bash -s -- "$GITHUB_SHA" "$DEPLOY_ARCHIVE" <<'REMOTE'
+            bash -s -- "$GITHUB_SHA" "$DEPLOY_RELEASE" <<'REMOTE'
           set -euo pipefail
           cd /home/ubuntu/projects/devhub
 
           version="$1"
-          archive="$2"
+          release_name="$2"
+          [[ "$release_name" =~ ^backend-[0-9]+-[0-9]+$ ]]
 
           # 与前端工作流共用锁，避免同时更新容器
           exec 9>.deploy.lock
           flock -w 300 9
 
           # 每次部署保留独立目录
-          release="releases/${archive%.tar.gz}"
-          mkdir -p "$release"
-          tar -xzf "$archive" -C "$release"
+          release="releases/$release_name"
+          # 完整性校验通过后才允许更新容器。
+          (cd "$release" && sha256sum --check SHA256SUMS)
 
           # 使用打好的 JAR 构建镜像；服务器无需安装 Maven
           docker build -t "devhub-backend:$version" "$release"
-          rm -f "$archive"
 
           # 保留上一个镜像版本，供需要时恢复
           if docker image inspect devhub-backend:latest >/dev/null 2>&1; then

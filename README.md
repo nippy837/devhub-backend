@@ -115,3 +115,11 @@ mvn clean package
 
 已移除后端测试类、测试专用配置、测试建表 SQL 和测试依赖。
 现有 MySQL 表沿用 `created_time`、`updated_time` 列，无需新增业务字段。
+
+## 自动部署
+
+推送 `main` 后由 GitHub Actions 使用 Java 21 打包。上传前从当前后端容器复制 `/app/app.jar` 作为服务器端 rsync 基准，直接增量传输 JAR、Dockerfile 和 SHA-256 清单，避免每次上传不同名称的完整 gzip 包。
+每次部署写入独立发布目录，不改写运行中的 JAR；传输完成并通过 SHA-256 校验后才构建镜像、更新容器和检查健康接口。旧镜像保留为 `devhub-backend:previous`。
+
+上传最多重试 3 次，每次最长 5 分钟，无数据传输超过 120 秒即重试；分片保留在本次发布目录。日志中的 `Literal data` 是实际需要补传的数据，`Matched data` 是复用数据。首次部署或依赖大幅变化时可能需要完整传输；若持续超时，应检查服务器带宽或调整上传步骤的时间限制。
+服务器需要 Docker Compose、rsync、flock 和 sha256sum；与前端容器更新共用 `.deploy.lock`。此流程不执行数据库 DDL。
