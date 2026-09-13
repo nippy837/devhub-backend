@@ -48,6 +48,12 @@ public class ArcadeServiceImpl implements ArcadeService {
 
     @Override
     public Map<String, Object> leaderboard(Long userId, String kind, String variant) {
+        if ("sokoban".equals(kind)) {
+            // 兼容旧客户端的关卡参数，但始终返回累计通关排行榜。
+            if (variant != null) ArcadeRules.validate(kind, variant);
+            return sokobanLeaderboard(userId);
+        }
+        if (variant == null) throw new ApiException(400, "请指定游戏难度");
         ArcadeRules.validate(kind, variant);
         // 聚合方向只由服务端的游戏类型决定，用户输入仍使用绑定参数。
         String aggregate = kind.equals("2048") ? "MAX" : "MIN";
@@ -58,6 +64,25 @@ public class ArcadeServiceImpl implements ArcadeService {
         Long best = userId == null ? null : jdbc.queryForObject("SELECT " + aggregate + "(metric) FROM arcade_games WHERE user_id = ? AND game_kind = ? AND variant = ? AND metric > 0", Long.class, userId, kind, variant);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("entries", entries); result.put("myBest", best);
+        return result;
+    }
+
+    private Map<String, Object> sokobanLeaderboard(Long userId) {
+        var entries = jdbc.query("""
+                SELECT u.id, u.username, COUNT(DISTINCT g.variant) AS cleared_levels
+                FROM app_users u JOIN arcade_games g ON u.id = g.user_id
+                WHERE g.game_kind = 'sokoban' AND g.outcome = 'won'
+                GROUP BY u.id, u.username
+                ORDER BY cleared_levels DESC, u.id ASC LIMIT 50
+                """, (rs, index) -> Map.of("rank", index + 1, "userId", rs.getLong("id"),
+                "username", rs.getString("username"), "score", rs.getLong("cleared_levels")));
+        Long cleared = userId == null ? null : jdbc.queryForObject("""
+                SELECT COUNT(DISTINCT variant) FROM arcade_games
+                WHERE user_id = ? AND game_kind = 'sokoban' AND outcome = 'won'
+                """, Long.class, userId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("entries", entries);
+        result.put("myBest", cleared);
         return result;
     }
 }

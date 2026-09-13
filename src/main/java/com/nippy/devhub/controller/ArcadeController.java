@@ -35,7 +35,7 @@ public class ArcadeController {
         return Result.success(arcade.finish(auth.requireUser(request), kind, id, body.actions));
     }
     @GetMapping("/leaderboard")
-    public Result<Map<String, Object>> leaderboard(@PathVariable String kind, @RequestParam String variant, HttpServletRequest request) {
+    public Result<Map<String, Object>> leaderboard(@PathVariable String kind, @RequestParam(required = false) String variant, HttpServletRequest request) {
         return Result.success(arcade.leaderboard(auth.userId(request), kind, variant));
     }
 }
