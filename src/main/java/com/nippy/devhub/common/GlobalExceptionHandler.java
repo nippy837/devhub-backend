@@ -24,6 +24,20 @@ public class GlobalExceptionHandler {
         return Result.failure(400, "请求格式不正确，请检查录入内容");
     }
 
+    @ExceptionHandler(AccountNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public Result<Void> handleNotFound(AccountNotFoundException e) {
+        return Result.failure(404, e.getMessage());
+    }
+
+    @ExceptionHandler({org.springframework.web.bind.MissingServletRequestParameterException.class,
+            org.springframework.web.method.annotation.HandlerMethodValidationException.class,
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class})
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Result<Void> handleInvalidParameter() {
+        return Result.failure(400, "请求参数不正确，请检查账号ID、页码和每页条数");
+    }
+
     @ExceptionHandler(DataAccessException.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public Result<Void> handleDatabaseError() {
