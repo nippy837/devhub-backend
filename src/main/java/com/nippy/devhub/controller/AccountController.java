@@ -2,9 +2,11 @@ package com.nippy.devhub.controller;
 
 import com.nippy.devhub.common.Result;
 import com.nippy.devhub.dto.*;
+import com.nippy.devhub.interceptor.AccountOperationLogInterceptor;
 import com.nippy.devhub.service.AccountService;
 import com.nippy.devhub.vo.AccountPageVO;
 import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import org.springframework.http.HttpStatus;
@@ -23,8 +25,12 @@ public class AccountController {
 
     @PostMapping("/accounts")
     @ResponseStatus(HttpStatus.CREATED)
-    public Result<Long> createAccount(@Valid @RequestBody AccountCreateDTO request) {
-        return Result.success(accountService.createAccount(request));
+    public Result<Long> createAccount(@Valid @RequestBody AccountCreateDTO request,
+                                      HttpServletRequest servletRequest) {
+        Long id = accountService.createAccount(request);
+        // 把新增 ID 交给统一日志拦截器；不传递账号表单，避免记录密码。
+        servletRequest.setAttribute(AccountOperationLogInterceptor.ACCOUNT_ID_ATTRIBUTE, id);
+        return Result.success(id);
     }
 
     // ID 使用查询参数，例如 PUT /api/accounts?id=10；账号内容仍放在 JSON 请求体中。
