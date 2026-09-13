@@ -24,7 +24,9 @@ Java 21、Spring Boot、MyBatis、MySQL。启动前配置 `DB_URL`、`DB_USERNAM
 
 以上写接口必须携带 `Content-Type: application/json` 和 `X-DevHub-Request: 1`。
 使用同源 HttpOnly、SameSite=Strict 会话 Cookie，不开放跨域访问。
-用户名为 3–24 位英文字母、数字或下划线，不区分大小写；密码 8–128 位，使用独立随机盐与 PBKDF2-HMAC-SHA256（600000 轮）存储。
+用户名为 3–24 位英文字母、数字或下划线，不区分大小写；密码 8–128 位，按当前要求以明文存储。沿用 `app_users.password_hash` 字段，保存格式为 `{noop}` 加原始密码（例如 `{noop}example-password`）；前缀仅用于识别格式，不进行加密或编码，首尾空格保留。接口仍只返回用户 ID 和用户名，不返回密码。
+
+无需 DDL 或批量修改数据库。旧版 PBKDF2 哈希不可逆，旧账号仍可使用原密码登录，验证成功后自动转为上述明文格式；验证失败不修改记录。尚未再次登录的旧账号保留原哈希。
 注册和登录按来源地址限制为每分钟 30 次。会话闲置 7 天过期，后端重启后需重新登录，数据库成绩继续保留。
 HTTPS 部署应设置 `SESSION_COOKIE_SECURE=true`；本地 HTTP 开发默认 false。
 

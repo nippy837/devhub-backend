@@ -12,27 +12,26 @@ import org.springframework.stereotype.Service;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 import java.security.MessageDigest;
-import java.security.SecureRandom;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Map;
 
 @Service
 public class AuthServiceImpl implements AuthService {
     private static final String USER_ID = "devhub.userId";
-    private static final SecureRandom RANDOM = new SecureRandom();
+    // 明文格式标记，不加密；避免将形似旧哈希的用户密码误判为哈希。
+    private static final String PLAIN_PREFIX = "{noop}";
     private final JdbcTemplate jdbc;
-    private final String dummyHash;
 
     public AuthServiceImpl(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
-        this.dummyHash = hash("dummy-password-for-constant-work");
     }
 
     @Override
     public Map<String, Object> register(String username, String password, HttpServletRequest request) {
         String name = username.toLowerCase(java.util.Locale.ROOT);
         try {
-            jdbc.update("INSERT INTO app_users (username, password_hash) VALUES (?, ?)", name, hash(password));
+            jdbc.update("INSERT INTO app_users (username, password_hash) VALUES (?, ?)", name, PLAIN_PREFIX + password);
         } catch (DuplicateKeyException e) {
             throw new ApiException(409, "用户名已被使用");
         }
@@ -45,10 +44,15 @@ public class AuthServiceImpl implements AuthService {
     public Map<String, Object> login(String username, String password, HttpServletRequest request) {
         var rows = jdbc.queryForList("SELECT id, password_hash FROM app_users WHERE username = ?",
                 username.toLowerCase(java.util.Locale.ROOT));
-        String stored = rows.isEmpty() ? dummyHash : (String) rows.getFirst().get("password_hash");
+        String stored = rows.isEmpty() ? null : (String) rows.getFirst().get("password_hash");
         boolean valid = verify(password, stored);
         if (rows.isEmpty() || !valid) throw new ApiException(401, "用户名或密码不正确");
-        signIn(request, ((Number) rows.getFirst().get("id")).longValue());
+        long id = ((Number) rows.getFirst().get("id")).longValue();
+        if (!stored.startsWith(PLAIN_PREFIX)) {
+            // 旧哈希无法还原；仅在原密码验证成功后迁移，不覆盖并发修改。
+            jdbc.update("UPDATE app_users SET password_hash = ? WHERE id = ? AND password_hash = ?", PLAIN_PREFIX + password, id, stored);
+        }
+        signIn(request, id);
         return current(request);
     }
 
@@ -83,17 +87,23 @@ public class AuthServiceImpl implements AuthService {
         return rows.getFirst();
     }
 
-    private static String hash(String password) {
-        byte[] salt = new byte[16];
-        RANDOM.nextBytes(salt);
-        return "600000:" + Base64.getEncoder().encodeToString(salt) + ":"
-                + Base64.getEncoder().encodeToString(derive(password, salt, 600000));
-    }
-
     private static boolean verify(String password, String stored) {
-        String[] parts = stored.split(":");
-        return MessageDigest.isEqual(Base64.getDecoder().decode(parts[2]),
-                derive(password, Base64.getDecoder().decode(parts[1]), Integer.parseInt(parts[0])));
+        if (stored == null) return false;
+        if (stored.startsWith(PLAIN_PREFIX)) {
+            return MessageDigest.isEqual(password.getBytes(StandardCharsets.UTF_8),
+                    stored.substring(PLAIN_PREFIX.length()).getBytes(StandardCharsets.UTF_8));
+        }
+        // 只兼容此前应用生成的 PBKDF2 格式，损坏记录按登录失败处理。
+        String[] parts = stored.split(":", -1);
+        if (parts.length != 3 || !"600000".equals(parts[0])) return false;
+        try {
+            byte[] salt = Base64.getDecoder().decode(parts[1]);
+            byte[] expected = Base64.getDecoder().decode(parts[2]);
+            return salt.length == 16 && expected.length == 32
+                    && MessageDigest.isEqual(expected, derive(password, salt, 600000));
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     private static byte[] derive(String password, byte[] salt, int rounds) {
