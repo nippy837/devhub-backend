@@ -34,16 +34,22 @@ public class ArcadeServiceImpl implements ArcadeService {
     @Transactional
     @Override
     public Map<String, Object> finish(long userId, String kind, String id, List<String> actions) {
-        var rows = jdbc.queryForList("SELECT variant, seed, started_at, metric, outcome FROM arcade_games WHERE id = ? AND user_id = ? AND game_kind = ? FOR UPDATE", id, userId, kind);
+        var rows = jdbc.queryForList("SELECT variant, seed, started_at, finished_at, metric, outcome FROM arcade_games WHERE id = ? AND user_id = ? AND game_kind = ? FOR UPDATE", id, userId, kind);
         if (rows.isEmpty()) throw new ApiException(404, "对局不存在");
         var row = rows.getFirst();
-        if (row.get("metric") != null) return Map.of("score", row.get("metric"), "outcome", row.get("outcome"));
+        if (row.get("metric") != null) return roundResult(row);
         ArcadeRules replay = ArcadeRules.replay(kind, (String) row.get("variant"), ((Number) row.get("seed")).longValue(), actions);
-        long elapsed = Math.max(1, System.currentTimeMillis() - ((Number) row.get("started_at")).longValue());
+        long finishedAt = System.currentTimeMillis();
+        long elapsed = Math.max(1, finishedAt - ((Number) row.get("started_at")).longValue());
         long metric = kind.equals("2048") ? replay.getScore() : !replay.getOutcome().equals("won") ? 0 : kind.equals("sokoban") ? replay.getSteps() : elapsed;
         String outcome = replay.getOutcome().equals("running") ? "ended" : replay.getOutcome();
-        jdbc.update("UPDATE arcade_games SET metric = ?, outcome = ?, finished_at = ? WHERE id = ?", metric, outcome, System.currentTimeMillis(), id);
-        return Map.of("score", metric, "outcome", outcome);
+        jdbc.update("UPDATE arcade_games SET metric = ?, outcome = ?, finished_at = ? WHERE id = ?", metric, outcome, finishedAt, id);
+        return Map.of("score", metric, "outcome", outcome, "elapsedMs", elapsed);
+    }
+
+    private Map<String, Object> roundResult(Map<String, Object> row) {
+        long elapsed = Math.max(1, ((Number) row.get("finished_at")).longValue() - ((Number) row.get("started_at")).longValue());
+        return Map.of("score", row.get("metric"), "outcome", row.get("outcome"), "elapsedMs", elapsed);
     }
 
     @Override
@@ -64,6 +70,14 @@ public class ArcadeServiceImpl implements ArcadeService {
         Long best = userId == null ? null : jdbc.queryForObject("SELECT " + aggregate + "(metric) FROM arcade_games WHERE user_id = ? AND game_kind = ? AND variant = ? AND metric > 0", Long.class, userId, kind, variant);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("entries", entries); result.put("myBest", best);
+        if ("mines".equals(kind)) {
+            var recent = userId == null ? List.<Map<String, Object>>of() : jdbc.queryForList("""
+                    SELECT metric, outcome, started_at, finished_at FROM arcade_games
+                    WHERE user_id = ? AND game_kind = 'mines' AND variant = ? AND finished_at IS NOT NULL
+                    ORDER BY finished_at DESC, started_at DESC, id DESC LIMIT 1
+                    """, userId, variant);
+            result.put("myLast", recent.isEmpty() ? null : roundResult(recent.getFirst()));
+        }
         return result;
     }
 
