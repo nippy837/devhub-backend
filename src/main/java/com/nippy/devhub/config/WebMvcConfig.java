@@ -15,7 +15,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(authInterceptor).addPathPatterns("/api/auth/**", "/api/snake/**");
+        registry.addInterceptor(authInterceptor).addPathPatterns("/api/auth/**", "/api/snake/**", "/api/arcade/**");
         // 参数校验前开始记录，请求处理结束后统一保存，覆盖成功和失败结果。
         registry.addInterceptor(accountOperationLogInterceptor).addPathPatterns("/api/accounts");
     }
