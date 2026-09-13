@@ -2,6 +2,10 @@
 
 Java 21、Spring Boot、MyBatis、MySQL。启动前配置 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD`，默认端口为 8080。
 
+## AI 对话
+
+新增登录后可用的 AI 对话转发接口；在后端设置 `OPENAI_API_KEY`、`OPENAI_MODEL` 即可启用。可选 `OPENAI_BASE_URL` 默认为 `https://api.openai.com/v1`，自定义网关需兼容 Responses API。密钥仅保留在后端，未配置时不影响原有功能。完整接入和部署说明见 [AI 对话接入](docs/ai-chat.md)。
+
 ## 登录与贪吃蛇排行
 
 上线前由数据库管理员手动执行 [sql/20260913_auth_snake.sql](sql/20260913_auth_snake.sql)。

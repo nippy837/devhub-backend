@@ -18,6 +18,11 @@ server:
         same-site: strict
         secure: ${SESSION_COOKIE_SECURE:false}
 
+ai:
+  api-key: ${OPENAI_API_KEY:}
+  model: ${OPENAI_MODEL:}
+  base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+
 mybatis:
   configuration:
     # 开启驼峰映射
