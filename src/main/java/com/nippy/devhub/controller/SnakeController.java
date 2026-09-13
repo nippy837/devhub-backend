@@ -22,8 +22,8 @@ public class SnakeController {
 
     @Data
     public static class StartRequest {
-        @NotNull @Pattern(regexp = "easy|normal|hard", message = "游戏难度无效")
-        private String difficulty;
+        @NotNull @Pattern(regexp = "normal", message = "贪吃蛇统一使用中速，请刷新页面")
+        private String difficulty = "normal";
     }
     @Data
     public static class FinishRequest {

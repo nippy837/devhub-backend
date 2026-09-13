@@ -17,6 +17,7 @@ import java.util.UUID;
 public class SnakeServiceImpl implements SnakeService {
     private final JdbcTemplate jdbc;
     private final SecureRandom random = new SecureRandom();
+    // 仅用于兼容更新前尚未结束的对局；新对局只允许 normal。
     private static final Map<String, Integer> SPEEDS = Map.of("easy", 200, "normal", 140, "hard", 90);
 
     public SnakeServiceImpl(JdbcTemplate jdbc) { this.jdbc = jdbc; }
@@ -24,7 +25,7 @@ public class SnakeServiceImpl implements SnakeService {
     @Transactional
     @Override
     public Map<String, Object> start(long userId, String difficulty) {
-        if (!SPEEDS.containsKey(difficulty)) throw new ApiException(400, "游戏难度无效");
+        if (!"normal".equals(difficulty)) throw new ApiException(400, "贪吃蛇统一使用中速，请刷新页面");
         jdbc.queryForObject("SELECT id FROM app_users WHERE id = ? FOR UPDATE", Long.class, userId);
         long now = System.currentTimeMillis();
         Integer recent = jdbc.queryForObject("SELECT COUNT(*) FROM snake_games WHERE user_id = ? AND started_at > ?",
@@ -60,12 +61,12 @@ public class SnakeServiceImpl implements SnakeService {
         List<Map<String, Object>> rows = jdbc.query("""
                 SELECT u.id, u.username, MAX(g.score) AS best_score
                 FROM app_users u JOIN snake_games g ON u.id = g.user_id
-                WHERE g.score > 0 GROUP BY u.id, u.username
+                WHERE g.score > 0 AND g.difficulty = 'normal' GROUP BY u.id, u.username
                 ORDER BY best_score DESC, u.id ASC LIMIT 50
                 """, (rs, index) -> Map.of("rank", index + 1, "userId", rs.getLong("id"),
                 "username", rs.getString("username"), "score", rs.getInt("best_score")));
         Integer best = userId == null ? 0 : jdbc.queryForObject(
-                "SELECT COALESCE(MAX(score), 0) FROM snake_games WHERE user_id = ?", Integer.class, userId);
+                "SELECT COALESCE(MAX(score), 0) FROM snake_games WHERE user_id = ? AND difficulty = 'normal'", Integer.class, userId);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("entries", rows);
         result.put("myBest", best);

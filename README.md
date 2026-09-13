@@ -14,7 +14,7 @@ Java 21、Spring Boot、MyBatis、MySQL。启动前配置 `DB_URL`、`DB_USERNAM
 | `POST /api/auth/login` | 用户名密码登录 |
 | `GET /api/auth/me` | 当前用户 `{id, username}`，游客为 null |
 | `POST /api/auth/logout` | 使当前会话失效 |
-| `POST /api/snake/games` | 登录后提交 `difficulty`（easy/normal/hard），返回 `{id, seed}` |
+| `POST /api/snake/games` | 登录后提交 `difficulty: "normal"`（省略时默认中速），返回 `{id, seed}` |
 | `POST /api/snake/games/{id}/finish` | 登录后提交 `{moves: "RRDD..."}`，返回服务端复算的 `{score, outcome}` |
 | `GET /api/snake/leaderboard` | 公开的前 50 名 `entries`，以及当前用户的 `myBest` |
 
@@ -27,9 +27,9 @@ HTTPS 部署应设置 `SESSION_COOKIE_SECURE=true`；本地 HTTP 开发默认 fa
 棋盘为 20×20，初始蛇长 3，最多同时存在 8 颗果实，每颗 20 分，最高 7940 分。
 左右、上下边界互通，撞到自己失败，填满棋盘获胜；可主动结束并记分。
 服务端保存对局种子，按相同随机算法复算最多 50000 步操作和实际耗时，不接收客户端提供的分数。
-每个方向字符表示一个移动周期：U/D/L/R；每周期耗时为轻松 200ms、标准 140ms、挑战 90ms。
+每个方向字符表示一个移动周期：U/D/L/R；新对局统一中速，每周期 140ms；旧对局仍按记录的原始速度验证。
 同一对局只计分一次，重复提交返回既有成绩；仅对局所属用户可提交。每用户每分钟最多开始 20 局。
-复算用于防止直接篡改分数，不防止自动化代玩。排行榜按每位用户的最高正分排序，同分按用户 ID 升序排列，三个难度共用排行榜。
+复算用于防止直接篡改分数，不防止自动化代玩。排行榜按每位用户的最高正分排序，同分按用户 ID 升序排列，仅统计中速（normal）成绩；历史慢速、快速记录保留但不入榜。
 未登录时可本地试玩，游客成绩不补录至账号。此版本与旧版本计分不同，游客最高分使用新的本地存储键。
 
 ## 2048、推箱子与扫雷
